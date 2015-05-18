@@ -1,0 +1,157 @@
+#!/usr/bin/env python
+from libmproxy.protocol.http import HTTPResponse
+from netlib.odict import ODictCaseless
+from libmproxy.protocol.http import decoded
+import re
+import pickle
+from os.path import expanduser
+import sys
+import urllib2
+
+###################################################
+# Settings for testing
+SN = 0	# Social networks settings, 1 for disallow content
+HP = 0	# Hide Profanity, 1 for disallow content
+AC = 0	# AdultContent, 1 for disallow content
+SS = 0	# Safe search settings, 1 for disallow content
+
+BL = ["seznam.cz"]
+WL = ["centrum.cz"]
+###################################################
+
+social_networks = ["plus.google.com", "facebook.com", "twitter.com", "tumblr.com", "linkedin.com", "instagram.com", "friendster.com", "myspace.com"]
+web_searchs = ["bing.com", "yahoo.com","ask.com", "aol.com", "wow.com", "webcrawler.com", "mywebsearch.com", "infospace.com", "info.com", "duckduckgo.com", "blekko.com", "dogpile.com", "alhea.com"]
+vulgarism = ["cock", "dick", "fuck", "pussy", "sex", "shit"]
+
+replace_content = 1
+
+
+try:
+	home = expanduser("~")
+	data = pickle.load(open(home+"/.btw_settings.p", "rb"))
+	f = open('testing','w')
+	f.write(str(data))
+	f.close()
+
+	if (data['SN'] == "Allowed"):
+		SN = 0
+	else:
+		SN = 1
+
+	if (data['HP'] == "Yes"):
+		HP = 1
+	else:
+		HP = 0
+
+	if (data['AC'] == "Allowed"):
+		AC = 0
+	else:
+		AC = 1
+
+	if (data['SS'] == "Allowed"):
+		SS = 0
+	else:
+		SS = 1
+
+	BL = data['BL'].split(" ")
+	WL = data['WL'].split(" ")
+except:
+	sys.exit()
+	pass
+
+def request(context, flow):
+	global social_networks
+	global web_searchs
+	global SS
+	global SN
+	global BL
+	global WL
+	# pretty_host(hostheader=True) takes the Host: header of the request into account,
+
+
+	# Kontrola casu
+	# Obsah pro dospele
+
+	################################
+	# Content grabbing for testing
+	#try:
+	#	home = expanduser("~")
+	#	site_data = urllib2.urlopen("http://"+flow.request.pretty_host(hostheader=True)).read()
+	#	text_file = open(home+"/temp.txt", "w")
+	#	text_file.write(site_data)
+	#	text_file.close()
+	#except:
+	#	pass
+	################################
+
+	# Checking WL
+	if (WL):
+		if (WL[0] != ''):
+			if flow.request.pretty_host(hostheader=True).endswith(tuple(WL)):
+				return 1
+
+	# Checking if page is on BL
+	if flow.request.pretty_host(hostheader=True).endswith(tuple(BL)):
+		#print flow.request.pretty_host(hostheader=True)
+		resp = HTTPResponse([1, 1], 200, "OK",ODictCaseless([["Content-Type", "text/html"]]),"Reason: This site is on Black list")
+		flow.reply(resp)
+
+	# Checking if social networks are banned
+	if (SS):
+		if flow.request.pretty_host(hostheader=True).endswith(tuple(social_networks)):
+			#print flow.request.pretty_host(hostheader=True)
+			resp = HTTPResponse([1, 1], 200, "OK",ODictCaseless([["Content-Type", "text/html"]]),"Reason: Social network is blocked")
+			flow.reply(resp)
+
+	# Checking if web searches are banned
+	if (SN):
+		if flow.request.pretty_host(hostheader=True).endswith(tuple(web_searchs)):
+			#print flow.request.pretty_host(hostheader=True)
+			resp = HTTPResponse([1, 1], 200, "OK",ODictCaseless([["Content-Type", "text/html"]]),"Reason: This websearch is blocked, try http://google.com")
+			flow.reply(resp)
+
+	# Method 2: Redirect the request to a different server
+	if flow.request.pretty_host(hostheader=True).endswith(tuple(web_searchs)):
+	    flow.request.host = "google.com"
+	    flow.request.update_host_header()
+
+
+# Decoding gzipped responses and replacing contents
+def response(context, flow):
+	global HP
+	global vulgarism
+
+	# Hide profanity from webpages
+	if (HP):
+		with decoded(flow.response):
+			#print flow.response.content
+			for i in vulgarism:
+				repl = re.compile(re.escape(i), re.IGNORECASE)
+				flow.response.content = repl.sub('***', flow.response.content)
+
+
+# For purpose of tests
+#def ___response(context, flow):
+#    # print flow.response.headers
+#    # flow.response.headers["newheader"] = ["foo"]
+#    if flow.response.headers["Content-Type"]:
+#        if flow.response.headers["Content-Type"] == ["text/html"]:
+#            print 'Webpage detected.  Injecting response.'
+#            if flow.response.content:
+#				text_file = open("temp.txt", "w")
+#				text_file.write("Purchase Amount: " + flow.response.content)
+#				text_file.close()
+#				c = flow.response.content.replace('Cunt', '****')
+#				print 'Num replacements:  ' + str(c)
+#				if c > 0:
+#					print 'Injection successful.'
+#				else:
+#					print 'Injection unsuccessful.'
+
+#def modify(chunks):
+#    for prefix, content, suffix in chunks:
+#        yield prefix, content.replace("Cunt", "bar"), suffix
+
+
+#def responseheaders(context, flow):
+#    flow.response.stream = modify
